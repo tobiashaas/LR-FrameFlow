@@ -6,7 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "lr-frameflow-worker-inference"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["lr-frameflow-edit-serializer"]
+dependencies = [
+    "lr-frameflow-domain",
+    "lr-frameflow-persistence",
+    "lr-frameflow-queue",
+    "lr-frameflow-observability",
+    "lr-frameflow-inference-pipeline",
+]
 
 [project.scripts]
 lr-ff-inference-worker = "lr_frameflow_inference_worker.cli:main"

@@ -1,0 +1,1 @@
+"""Job repository implementations."""

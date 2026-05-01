@@ -198,3 +198,32 @@ components:
           type: string
         correlation_id:
           type: string
+    JobEnvelopeV1:
+      type: object
+      description: Redis queue payload (JSON Schema job-envelope-v1.schema.json)
+      required:
+        - envelope_schema_version
+        - job_id
+        - job_kind
+        - payload
+      additionalProperties: false
+      properties:
+        envelope_schema_version:
+          type: string
+          enum: ["job-envelope-v1"]
+        job_id:
+          type: string
+          format: uuid
+        job_kind:
+          type: string
+          enum: [train, edit]
+        attempt:
+          type: integer
+          minimum: 0
+          default: 0
+        trace_context:
+          type: object
+          additionalProperties: {}
+        payload:
+          type: object
+          additionalProperties: {}

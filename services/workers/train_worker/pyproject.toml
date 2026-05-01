@@ -6,7 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "lr-frameflow-worker-train"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "lr-frameflow-domain",
+    "lr-frameflow-persistence",
+    "lr-frameflow-queue",
+    "lr-frameflow-observability",
+]
 
 [project.scripts]
 lr-ff-train-worker = "lr_frameflow_train_worker.cli:main"

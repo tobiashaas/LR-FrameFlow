@@ -12,7 +12,7 @@ Lightroom Plugin (Lua) → Bridge (Desktop) → API → Job Queue → Worker (Fe
                                               Postgres (+ pgvector), Objekt-Speicher
 ```
 
-Siehe Paketgrenzen und Entscheide in [`docs/adr/`](docs/adr/).
+Siehe Paketgrenzen und Entscheide in [`docs/adr/`](docs/adr/) (u. a. Queue, Tauri, Redis/DLQ).
 
 ## Repository-Layout
 
@@ -29,7 +29,12 @@ services/
   workers/             # Feature-, Train-, Inference-Worker (skalierbar)
 
 libs/
-  edit-serializer/     # Lightroom-kompatibles Writeback (reine Transformation)
+  domain/               # JobKind/JobStatus (keine Infra-Imports)
+  persistence/          # SQLAlchemy, Repositories (lädt domain)
+  queue/                # Redis, JobEnvelopeV1, DLQ-Helfer
+  observability/        # strukturierte Logs
+  inference-pipeline/   # reine Inferenzschritte (Stub)
+  edit-serializer/      # Lightroom-kompatibles Writeback
   lr-io/                # Gemeinsame I/O-/Pfadhilfen
 
 infra/
@@ -63,14 +68,17 @@ Jede Python-Komponente hat ein eigenes `pyproject.toml` (klare Ownership). Reihe
 ```bash
 python -m venv .venv
 .venv\Scripts\activate   # Windows
-pip install -e "libs/edit-serializer" -e "libs/lr-io"
+pip install -e "libs/domain" -e "libs/persistence[dev]"
+pip install -e "libs/queue" -e "libs/observability"
+pip install -e "libs/edit-serializer" -e "libs/lr-io" -e "libs/inference-pipeline[dev]"
 pip install -e "services/api[dev]"
-pip install -e "services/workers/feature_worker" -e "services/workers/train_worker"
-pip install -e "services/workers/inference_worker"
+pip install -e "services/workers/feature_worker" -e "services/workers/train_worker" -e "services/workers/inference_worker"
 
 cd services/api
 uvicorn lr_frameflow_api.main:app --reload
 ```
+
+Nach dem Start von Postgres/Redis (Compose) Migration: siehe [`infra/migrations/README.md`](infra/migrations/README.md). Contracts lokal prüfen: `python scripts/validate_contracts.py`.
 
 ## Bridge (Tauri)
 
