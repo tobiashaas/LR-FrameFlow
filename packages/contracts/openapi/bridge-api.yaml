@@ -1,0 +1,200 @@
+openapi: 3.0.3
+info:
+  title: LR-FrameFlow Bridge ↔ API
+  version: "0.1.0"
+  description: |
+    Thin Gateway: Jobs werden asynchron eingereiht (`202 Accepted`).
+    Zusätzliche kanonische JSON Schemas unter `json-schema/` (gleiche Felder abstimmen).
+servers:
+  - url: http://localhost:8080
+    description: Local API (compose default host port)
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /v1/jobs/train:
+    post:
+      operationId: createTrainJob
+      summary: Enqueue profile training job
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainJobRequestV1"
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAcceptedResponse"
+  /v1/jobs/edit:
+    post:
+      operationId: createEditJob
+      summary: Enqueue edit inference job
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditJobRequestV1"
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAcceptedResponse"
+  /v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      summary: Retrieve job lifecycle state
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Known job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobSnapshotV1"
+        "404":
+          description: Job not found
+  /v1/jobs/{job_id}/events:
+    get:
+      operationId: streamJobEvents
+      summary: Server-Sent Events stream (optional MVP)
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: SSE stream placeholder
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        description: Replay-safe enqueue key for Bridge retries
+  schemas:
+    JobAcceptedResponse:
+      type: object
+      required: [job_id, status, kind]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued]
+        kind:
+          type: string
+          enum: [train, edit]
+    TrainJobRequestV1:
+      type: object
+      required:
+        - schema_version
+        - profile_name
+        - genre
+        - format_type
+        - color_type
+        - photo_ids
+      properties:
+        schema_version:
+          type: string
+          example: train-request-v1
+        correlation_id:
+          type: string
+          description: Trace id from Lightroom/Bridge pipeline
+        profile_name:
+          type: string
+        genre:
+          type: string
+        format_type:
+          type: string
+          enum: [raw, jpeg_tiff]
+        color_type:
+          type: string
+          enum: [color, bw]
+        photo_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+        base_preset:
+          type: object
+          additionalProperties: true
+    EditJobRequestV1:
+      type: object
+      required:
+        - schema_version
+        - profile_id
+        - photo_ids
+      properties:
+        schema_version:
+          type: string
+          example: edit-request-v1
+        correlation_id:
+          type: string
+        profile_id:
+          type: string
+          format: uuid
+        collection_name:
+          type: string
+        photo_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+    JobSnapshotV1:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        payload_schema_version:
+          type: string
+        correlation_id:
+          type: string

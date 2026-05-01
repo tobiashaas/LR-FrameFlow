@@ -1,0 +1,11 @@
+[package]
+name = "lr-frameflow-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "LR-FrameFlow desktop bridge (Tauri scaffold placeholder)"
+
+[[bin]]
+name = "lr-frameflow-bridge"
+path = "src/main.rs"
+
+[dependencies]

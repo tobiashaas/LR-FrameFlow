@@ -1,0 +1,34 @@
+services:
+  # Postgres with pgvector (image maintained by pgvector org)
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "${LR_FF_POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${LR_FF_POSTGRES_DB:-lrframeflow}
+      POSTGRES_USER: ${LR_FF_POSTGRES_USER:-lrframeflow}
+      POSTGRES_PASSWORD: ${LR_FF_POSTGRES_PASSWORD:-lrframeflow}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${LR_FF_REDIS_PORT:-6379}:6379"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${LR_FF_MINIO_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${LR_FF_MINIO_PASSWORD:-miniosecret_changeme}
+    ports:
+      - "${LR_FF_MINIO_PORT:-9000}:9000"
+      - "${LR_FF_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:
