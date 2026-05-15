@@ -24,6 +24,65 @@ paths:
                   status:
                     type: string
                     example: ok
+  /v1/photos:
+    post:
+      operationId: uploadPhoto
+      summary: Upload JPEG preview + metadata, returns photo_id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, metadata]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JPEG preview image (max longest side 1200px recommended)
+                metadata:
+                  type: string
+                  description: JSON string conforming to photo-upload-v1 schema
+      responses:
+        "200":
+          description: Photo registered (already existed or newly created)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoCreatedResponse"
+  /v1/profiles:
+    get:
+      operationId: listProfiles
+      summary: List all profiles
+      responses:
+        "200":
+          description: List of profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfileResponse"
+  /v1/profiles/{profile_id}:
+    get:
+      operationId: getProfile
+      summary: Get a single profile by ID
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Profile found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        "404":
+          description: Profile not found
   /v1/jobs/train:
     post:
       operationId: createTrainJob
@@ -82,6 +141,28 @@ paths:
                 $ref: "#/components/schemas/JobSnapshotV1"
         "404":
           description: Job not found
+  /v1/jobs/{job_id}/result:
+    get:
+      operationId: getJobResult
+      summary: Retrieve edit result (LR settings) once job is completed
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Edit result available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EditResultResponse"
+        "404":
+          description: Job or result not found
+        "409":
+          description: Job not yet completed
   /v1/jobs/{job_id}/events:
     get:
       operationId: streamJobEvents
@@ -198,6 +279,62 @@ components:
           type: string
         correlation_id:
           type: string
+    PhotoCreatedResponse:
+      type: object
+      required: [photo_id, s3_key, already_existed]
+      properties:
+        photo_id:
+          type: string
+          format: uuid
+        s3_key:
+          type: string
+        already_existed:
+          type: boolean
+    ProfileResponse:
+      type: object
+      required: [profile_id, name, genre, format_type, color_type, status, version]
+      properties:
+        profile_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        genre:
+          type: string
+        format_type:
+          type: string
+          enum: [raw, jpeg_tiff]
+        color_type:
+          type: string
+          enum: [color, bw]
+        status:
+          type: string
+          enum: [draft, training, ready, failed]
+        version:
+          type: integer
+        model_artifact_key:
+          type: string
+          nullable: true
+        failure_reason:
+          type: string
+          nullable: true
+    EditResultResponse:
+      type: object
+      required: [job_id, photo_id, lr_settings]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        photo_id:
+          type: string
+          format: uuid
+        lr_settings:
+          type: object
+          additionalProperties: true
+          description: Lightroom Develop settings to apply (exposure, contrast, highlights, etc.)
+        s3_key:
+          type: string
+          nullable: true
     JobEnvelopeV1:
       type: object
       description: Redis queue payload (JSON Schema job-envelope-v1.schema.json)

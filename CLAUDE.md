@@ -1,0 +1,242 @@
+# CLAUDE.md — LRFrameFlow
+
+> **Convention:** Keep this file up to date. After every session that changes architecture,
+> adds endpoints, or completes a phase — update the relevant sections here and in `TODO.md`.
+
+## Project Overview
+
+LRFrameFlow is an AI-powered Lightroom Classic photo editing system. It uses an async job-orchestration architecture:
+
+1. **LR Plugin** (Lua, `apps/lr-plugin/`) — Lightroom Classic SDK, triggers jobs
+2. **Bridge Desktop App** (Tauri/Rust, `apps/bridge/`) — local orchestration layer
+3. **API** (FastAPI, `services/api/`) — thin HTTP gateway, returns 202 immediately, no blocking
+4. **Workers** (`services/workers/`) — three independent workers: feature, train, inference
+5. **Shared Libs** (`libs/`) — domain, persistence, queue, observability, inference-pipeline, edit-serializer, lr-io
+
+---
+
+## Current Implementation Status
+
+| Phase | Status | Summary |
+|-------|--------|---------|
+| Phase 1 — Domain Foundation | ✅ Done | DB models (Photo, Profile, FeatureVector, EditResult), migrations 002–006, API endpoints |
+| Phase 2 — Real Data Flow | ✅ Done | Workers download/upload MinIO, feature extraction, model artifact lifecycle |
+| Phase 3 — Real ML Pipeline | ✅ Done | Pillow histogram features (128-dim), Ridge regression, joblib serialization |
+| Phase 4 — Production Hardening | 🔲 Open | Retry logic, stuck-job recovery, Redis persistence, CI linting |
+| Phase 5 — Bridge & Plugin | 🔲 Open | Tauri HTTP client, LR Plugin integration, end-to-end flow |
+
+See `TODO.md` for the detailed task breakdown.
+
+---
+
+## Monorepo Layout
+
+```
+apps/
+  bridge/              # Tauri desktop app (Rust + JS)
+  lr-plugin/           # Lightroom SDK plugin (Lua)
+packages/
+  contracts/           # OpenAPI spec + JSON Schemas (source of truth for contracts)
+  domain-types/        # Optional shared DTOs (placeholder)
+libs/
+  domain/              # JobKind, JobStatus, ProfileStatus enums — no infra deps
+  persistence/         # SQLAlchemy ORM: Job, Photo, Profile, FeatureVector, EditResult
+  queue/               # Redis Lists publisher/consumer + DLQ
+  observability/       # get_logger() — stdlib logging wrapper
+  inference-pipeline/  # Feature extraction (Pillow) + Ridge model (scikit-learn/joblib)
+  edit-serializer/     # Lightroom-compatible edit serialization (stub)
+  lr-io/               # Shared path/I/O helpers (stub)
+services/
+  api/                 # FastAPI: all routes (photos, profiles, jobs, results)
+  workers/
+    feature_worker/    # lrff:jobs:feature → extract features → lrff:jobs:inference
+    train_worker/      # lrff:jobs:train → train Ridge model → Profile READY
+    inference_worker/  # lrff:jobs:inference → run inference → EditResult
+infra/
+  compose/             # docker-compose.yml: Postgres 16+pgvector, Redis 7, MinIO
+  migrations/          # Alembic migrations (001–007)
+docs/
+  adr/                 # Architecture Decision Records
+  plan/                # mvp.md — phased plan
+scripts/
+  validate_contracts.py
+TODO.md                # Completed + open work items — keep up to date
+```
+
+---
+
+## Architecture Principles
+
+- **API is fire-and-forget:** All endpoints return 202. Never add blocking work to the API.
+- **Strict module import boundaries** (enforced per ADR-003):
+  - `domain` imports nothing
+  - `queue` imports: domain, pydantic, redis
+  - `persistence` imports: domain, sqlalchemy, psycopg
+  - `observability` imports: stdlib only
+  - `inference-pipeline` imports: Pillow, numpy, scikit-learn, joblib — no DB/Redis
+  - `services/api` imports: domain, persistence, queue — NOT workers, NOT torch
+  - `services/workers/*` import: domain, persistence, queue, observability, inference-pipeline
+  - **Workers CANNOT import `lr_frameflow_api`**
+  - **API CANNOT import worker modules**
+- **Versioned contracts:** Every queue message and API schema has a `schema_version` field. Never break existing schema versions; add new ones.
+- **Idempotency:** Use the `idempotency_key` DB column (unique partial index) for safe retries.
+- **Photo upload is idempotent:** Uploading the same `lr_catalog_uuid` twice returns the existing record.
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `libs/domain/src/lr_frameflow_domain/jobs.py` | `JobKind` & `JobStatus` enums |
+| `libs/domain/src/lr_frameflow_domain/profiles.py` | `ProfileStatus` enum |
+| `libs/persistence/src/lr_frameflow_persistence/models.py` | All SQLAlchemy models |
+| `libs/persistence/src/lr_frameflow_persistence/repositories/` | One repo file per model |
+| `libs/inference-pipeline/src/lr_frameflow_inference_pipeline/features.py` | `extract_features()` — 128-dim histogram |
+| `libs/inference-pipeline/src/lr_frameflow_inference_pipeline/model.py` | `train_model()` / `run_inference()` |
+| `libs/queue/src/lr_frameflow_queue/envelope.py` | `JobEnvelopeV1` — canonical queue message |
+| `libs/queue/src/lr_frameflow_queue/constants.py` | Queue keys: `lrff:jobs:train`, `lrff:jobs:feature`, `lrff:jobs:inference` |
+| `libs/queue/src/lr_frameflow_queue/publisher.py` | `enqueue()`, `forward_to_inference()` |
+| `libs/queue/src/lr_frameflow_queue/consumer.py` | `blpop_envelope()`, `push_dead_letter()` |
+| `services/api/src/lr_frameflow_api/main.py` | FastAPI app + all routes |
+| `services/api/src/lr_frameflow_api/schemas.py` | Pydantic request/response models |
+| `services/api/src/lr_frameflow_api/deps.py` | FastAPI dependencies (DB session, publisher, S3) |
+| `services/api/src/lr_frameflow_api/storage.py` | boto3 MinIO helper |
+| `packages/contracts/openapi/bridge-api.yaml` | OpenAPI spec (Bridge ↔ API contract) |
+| `packages/contracts/json-schema/job-envelope-v1.schema.json` | Queue envelope schema |
+| `packages/contracts/json-schema/photo-upload-v1.schema.json` | Photo upload metadata schema |
+| `infra/compose/docker-compose.yml` | Local infra (Postgres, Redis, MinIO) |
+| `infra/compose/.env` | Local port overrides (Postgres 5433, MinIO 9100) |
+| `infra/migrations/versions/` | Migrations 001–007 |
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| POST | `/v1/photos` | Upload JPEG preview + metadata (idempotent by `lr_catalog_uuid`) |
+| GET | `/v1/profiles` | List all profiles |
+| GET | `/v1/profiles/{id}` | Get single profile with status |
+| POST | `/v1/jobs/train` | Enqueue train job (creates Profile in DRAFT) |
+| POST | `/v1/jobs/edit` | Enqueue edit job (profile must be READY, photo_ids must exist) |
+| GET | `/v1/jobs/{id}` | Get job status snapshot |
+| GET | `/v1/jobs/{id}/result` | Get edit results (only when job is COMPLETED) |
+
+---
+
+## Job Pipeline
+
+```
+Edit job:   API → lrff:jobs:feature → feature_worker → lrff:jobs:inference → inference_worker
+Train job:  API → lrff:jobs:train   → train_worker   → COMPLETED
+```
+
+Train flow detail:
+1. API creates Profile (DRAFT) + Job, enqueues to `lrff:jobs:train`
+2. `train_worker`: Profile → TRAINING, loads feature vectors + `lr_develop_settings` from DB, trains Ridge model, saves `.joblib` to MinIO, Profile → READY
+
+Edit flow detail:
+1. API validates Profile is READY + all photo_ids exist, enqueues to `lrff:jobs:feature`
+2. `feature_worker`: downloads JPEG from MinIO, extracts 128-dim histogram vector, saves FeatureVector, forwards to `lrff:jobs:inference`
+3. `inference_worker`: loads `.joblib` from MinIO, predicts 10 LR params per photo, saves EditResult
+
+On error at any stage: Job → FAILED, envelope pushed to `{queue}:dlq`.
+
+---
+
+## ML Pipeline
+
+- **Feature vector:** 128 floats — R/G/B/Brightness histograms, 32 bins each, normalized
+- **Model:** `MultiOutputRegressor(Ridge(alpha=1.0))` with `StandardScaler`, serialized with joblib
+- **10 LR params predicted:** `exposure, temp, tint, contrast, highlights, shadows, whites, blacks, vibrance, saturation`
+- **Fallback:** < 3 training samples → zero-model (returns all zeros)
+- **Artifact path:** `models/{profile_id}/model-ridge-v1.joblib` in MinIO bucket
+
+---
+
+## Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| API | FastAPI 0.115+, Pydantic 2.10+, Uvicorn 0.32+ |
+| Database | PostgreSQL 16 + pgvector, SQLAlchemy 2.0+, Alembic 1.14+ |
+| Queue | Redis 7, redis-py 5.2+ |
+| Object Storage | MinIO (S3-compatible), boto3 1.35+ |
+| Workers | Python 3.11+, blocking BLPOP loop |
+| ML | scikit-learn 1.4+, Pillow 10+, numpy 1.26+, joblib 1.3+ |
+| Desktop Bridge | Tauri (Rust + JS) |
+| LR Plugin | Lightroom Classic SDK (Lua) |
+| Linting | Ruff 0.8+ |
+| Testing | pytest 8+ |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) |
+
+---
+
+## Local Development
+
+```bash
+# Start infrastructure
+cp infra/compose/env.example infra/compose/.env
+# Edit .env to set port overrides if needed (Postgres 5433, MinIO 9100/9101)
+cd infra/compose && docker compose up -d
+
+# Install Python libs (order matters due to dependencies)
+pip install -e libs/domain
+pip install -e libs/queue
+pip install -e libs/persistence
+pip install -e libs/observability
+pip install -e libs/inference-pipeline
+pip install -e services/api
+pip install -e services/workers/feature_worker
+pip install -e services/workers/train_worker
+pip install -e services/workers/inference_worker
+
+# Run database migrations
+cd infra/migrations
+DATABASE_URL="postgresql+psycopg://lrframeflow:lrframeflow@127.0.0.1:5433/lrframeflow" alembic upgrade head
+
+# Start API
+cd services/api
+DATABASE_URL="postgresql+psycopg://lrframeflow:lrframeflow@127.0.0.1:5433/lrframeflow" \
+  uvicorn lr_frameflow_api.main:app --reload
+
+# Validate contracts (also runs in CI)
+python scripts/validate_contracts.py
+```
+
+---
+
+## CI
+
+Two jobs on push/PR to `main`:
+1. **contracts** — validates OpenAPI spec + all JSON schemas
+2. **inference-pipeline** — runs `pytest libs/inference-pipeline/tests/`
+
+---
+
+## ADRs (key decisions)
+
+| ADR | Decision |
+|-----|----------|
+| 001 | Redis Lists for async queuing; API returns 202 immediately |
+| 002 | Tauri (Rust) for Bridge instead of Electron |
+| 003 | Redis DLQ per primary queue; strict module import matrix |
+
+Full docs in `docs/adr/`.
+
+---
+
+## Environment Variables
+
+Key vars (see `infra/compose/env.example` for full list):
+
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `DATABASE_URL` | `postgresql+psycopg://lrframeflow:lrframeflow@127.0.0.1:5433/lrframeflow` | API, workers, migrations |
+| `REDIS_URL` | `redis://localhost:6379/0` | API, workers |
+| `S3_ENDPOINT` | `http://localhost:9100` | workers, API |
+| `S3_BUCKET` | `lrff-photos` | workers, API |
+| `S3_ACCESS_KEY` | `minio` | workers, API |
+| `S3_SECRET_KEY` | `miniosecret_changeme` | workers, API |

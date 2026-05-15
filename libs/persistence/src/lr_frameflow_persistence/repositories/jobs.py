@@ -29,6 +29,7 @@ class JobRepository:
         payload: dict[str, Any],
         correlation_id: str | None,
         idempotency_key: str | None,
+        profile_id: uuid.UUID | None = None,
     ) -> Job:
         job = Job(
             id=job_id,
@@ -38,6 +39,7 @@ class JobRepository:
             correlation_id=correlation_id,
             idempotency_key=idempotency_key,
             payload=payload,
+            profile_id=profile_id,
         )
         session.add(job)
         session.flush()

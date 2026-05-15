@@ -12,6 +12,7 @@ dependencies = [
   "lr-frameflow-domain",
   "sqlalchemy>=2.0.36",
   "psycopg[binary]>=3.2",
+  "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]

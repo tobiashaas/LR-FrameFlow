@@ -1,5 +1,6 @@
-"""Domain layer: job kinds and lifecycle states (transport- and ORM-free)."""
+"""Domain layer: job kinds, lifecycle states, profile states (transport- and ORM-free)."""
 
 from lr_frameflow_domain.jobs import JobKind, JobStatus
+from lr_frameflow_domain.profiles import ProfileStatus
 
-__all__ = ["JobKind", "JobStatus"]
+__all__ = ["JobKind", "JobStatus", "ProfileStatus"]

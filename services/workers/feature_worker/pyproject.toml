@@ -11,6 +11,8 @@ dependencies = [
     "lr-frameflow-persistence",
     "lr-frameflow-queue",
     "lr-frameflow-observability",
+    "lr-frameflow-inference-pipeline",
+    "boto3>=1.35",
 ]
 
 [project.scripts]
