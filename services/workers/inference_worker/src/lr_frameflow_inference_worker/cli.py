@@ -14,7 +14,8 @@ from sqlalchemy.orm import sessionmaker
 
 from lr_frameflow_domain.jobs import JobStatus
 from lr_frameflow_inference_pipeline import run_inference
-from lr_frameflow_observability import get_logger
+from lr_frameflow_observability import get_logger, start_heartbeat_thread
+from lr_frameflow_persistence.reaper import reap_stuck_jobs, start_reaper_thread
 from lr_frameflow_persistence.repositories.edit_results import EditResultRepository
 from lr_frameflow_persistence.repositories.feature_vectors import FeatureVectorRepository
 from lr_frameflow_persistence.repositories.jobs import JobRepository
@@ -22,7 +23,7 @@ from lr_frameflow_persistence.repositories.profiles import ProfileRepository
 from lr_frameflow_persistence.session import get_session_factory, session_scope
 from lr_frameflow_queue import consumer
 from lr_frameflow_queue.constants import QUEUE_INFERENCE
-from lr_frameflow_queue.publisher import redis_from_env
+from lr_frameflow_queue.publisher import RedisQueuePublisher, redis_from_env
 
 log = get_logger("lr_ff.inference_worker")
 
@@ -68,7 +69,6 @@ def process_one(redis: Redis, factory: sessionmaker) -> bool:
             if profile is None:
                 raise ValueError(f"profile {profile_id} not found")
             artifact_key = profile.model_artifact_key
-            base_preset = profile.base_preset or {}
 
         model_bytes: bytes = b""
         if artifact_key:
@@ -117,7 +117,16 @@ def process_one(redis: Redis, factory: sessionmaker) -> bool:
 def main() -> None:
     log.info("LR-FrameFlow inference worker — queue %s", QUEUE_INFERENCE)
     redis = redis_from_env()
+    publisher = RedisQueuePublisher(redis)
     factory = get_session_factory()
+
+    start_heartbeat_thread("/tmp/lr_ff_inference_worker.heartbeat")
+
+    n = reap_stuck_jobs(factory, queue_name=QUEUE_INFERENCE, publisher=publisher)
+    if n:
+        log.warning("reaper: recovered %d stuck jobs at startup", n)
+    start_reaper_thread(factory, queue_name=QUEUE_INFERENCE, publisher=publisher, logger=log)
+
     while True:
         try:
             if not process_one(redis, factory):

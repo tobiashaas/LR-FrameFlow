@@ -11,11 +11,24 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-lrframeflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "${LR_FF_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio:latest
@@ -28,7 +41,18 @@ services:
       - "${LR_FF_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Workers run as local Python processes (not in compose for now).
+  # When containerised, add HEALTHCHECK like:
+  #   HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  #       CMD bash -c 'test $(( $(date +%s) - $(cat /tmp/lr_ff_feature_worker.heartbeat) )) -lt 60'
 
 volumes:
   postgres_data:
+  redis_data:
   minio_data:

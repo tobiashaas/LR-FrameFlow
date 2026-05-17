@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import io
-import json
 import os
 import sys
 import time
@@ -16,7 +14,8 @@ from sqlalchemy.orm import sessionmaker
 
 from lr_frameflow_domain.jobs import JobStatus
 from lr_frameflow_inference_pipeline import extract_features
-from lr_frameflow_observability import get_logger
+from lr_frameflow_observability import get_logger, start_heartbeat_thread
+from lr_frameflow_persistence.reaper import reap_stuck_jobs, start_reaper_thread
 from lr_frameflow_persistence.repositories.feature_vectors import FeatureVectorRepository
 from lr_frameflow_persistence.repositories.jobs import JobRepository
 from lr_frameflow_persistence.repositories.photos import PhotoRepository
@@ -116,6 +115,15 @@ def main() -> None:
     redis = redis_from_env()
     publisher = RedisQueuePublisher(redis)
     factory = get_session_factory()
+
+    start_heartbeat_thread("/tmp/lr_ff_feature_worker.heartbeat")
+
+    # Recover any jobs stuck in RUNNING at startup, then run periodically.
+    n = reap_stuck_jobs(factory, queue_name=QUEUE_FEATURE, publisher=publisher)
+    if n:
+        log.warning("reaper: recovered %d stuck jobs at startup", n)
+    start_reaper_thread(factory, queue_name=QUEUE_FEATURE, publisher=publisher, logger=log)
+
     while True:
         try:
             if not process_one(redis, publisher, factory):

@@ -1,4 +1,4 @@
-name: Contracts and unit tests
+name: CI
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   contracts:
+    name: Validate contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,14 +20,56 @@ jobs:
       - name: Validate OpenAPI and JSON Schemas
         run: python scripts/validate_contracts.py
 
-  inference-pipeline:
+  lint:
+    name: Ruff lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Tests
+      - name: Install ruff
+        run: pip install ruff>=0.8
+      - name: Lint
         run: |
-          pip install -e "libs/inference-pipeline[dev]"
-          python -m pytest libs/inference-pipeline/tests/
+          ruff check \
+            libs/domain/src \
+            libs/queue/src \
+            libs/observability/src \
+            libs/inference-pipeline/src \
+            services/api/src \
+            services/workers/feature_worker/src \
+            services/workers/train_worker/src \
+            services/workers/inference_worker/src
+
+  inference-pipeline:
+    name: Inference pipeline tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e "libs/inference-pipeline[dev]"
+      - name: Test
+        run: python -m pytest libs/inference-pipeline/tests/ -v
+
+  api-tests:
+    name: API integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -e libs/domain
+          pip install -e libs/queue
+          pip install -e libs/observability
+          pip install -e "libs/persistence" --no-deps
+          pip install sqlalchemy>=2.0 pydantic>=2.10
+          pip install -e "services/api[dev]"
+      - name: Test
+        run: python -m pytest services/api/tests/ -v

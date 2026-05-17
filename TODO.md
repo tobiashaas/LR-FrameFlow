@@ -39,13 +39,13 @@ Update it whenever a phase is finished or new tasks are identified.
 ## Open
 
 ### Phase 4 — Production Hardening
-- [ ] **At-least-once delivery**: re-enqueue or retry on worker crash before ACK
-- [ ] **Stuck job recovery**: cron/daemon to find `running` jobs older than N minutes and reset to `pending`
-- [ ] **Redis persistence**: enable AOF or RDB snapshot in compose to survive restarts without message loss
-- [ ] **Worker health checks**: expose `/health` or heartbeat for Docker healthcheck
-- [ ] **CI linting**: add Ruff lint step to GitHub Actions workflow
-- [ ] **CI tests**: add integration tests for API endpoints (pytest + httpx TestClient)
-- [ ] **Contracts validation**: extend `validate_contracts.py` to also validate new JSON schemas
+- [x] **Redis AOF persistence**: `appendonly yes --appendfsync everysec` in compose + `redis_data` volume
+- [x] **Stuck job recovery**: `libs/persistence/src/lr_frameflow_persistence/reaper.py` — resets `running` jobs after 10 min timeout, re-enqueues on the correct queue; runs at startup + every 60s in daemon thread in all 3 workers
+- [x] **At-least-once delivery**: `set_status(RUNNING)` now sets `started_at`; reaper uses `enqueue_to(queue_name)` to push back on the exact worker queue; feature_worker `forward_to_inference` is idempotent (FeatureVectors skipped if already exist)
+- [x] **Worker health checks**: `libs/observability/src/lr_frameflow_observability/heartbeat.py` — writes Unix timestamp file every 15s; all 3 workers start heartbeat thread; docker-compose has HEALTHCHECK comment template
+- [x] **CI linting**: Ruff check step added to CI for all Python source dirs
+- [x] **CI tests**: API integration tests (14 tests, mock-based, no Postgres) in `services/api/tests/`; added `api-tests` job to CI
+- [x] **Contracts validation**: extended `validate_contracts.py` with edit-request + photo-upload schemas + examples; JSON parse check for all schema files
 - [ ] **Observability**: structured JSON logs, request-id propagation through queue envelopes
 - [ ] **Rate limiting / backpressure**: guard API against flooding the queues
 

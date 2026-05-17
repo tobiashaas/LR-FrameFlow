@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from lr_frameflow_domain import JobKind, JobStatus
@@ -58,5 +59,27 @@ class JobRepository:
             return None
         job.sync_status_enum(status)
         job.failure_reason = failure_reason
+        if status == JobStatus.RUNNING:
+            job.started_at = datetime.now(timezone.utc)
+        session.flush()
+        return job
+
+    @staticmethod
+    def find_stuck(session: Session, older_than: datetime) -> list[Job]:
+        """Return jobs that are RUNNING and have been so since before `older_than`."""
+        stmt = select(Job).where(
+            Job.status == JobStatus.RUNNING.value,
+            Job.started_at <= older_than,
+        )
+        return list(session.execute(stmt).scalars().all())
+
+    @staticmethod
+    def reset_to_queued(session: Session, job_id: uuid.UUID) -> Job | None:
+        job = session.get(Job, job_id)
+        if job is None:
+            return None
+        job.sync_status_enum(JobStatus.QUEUED)
+        job.started_at = None
+        job.failure_reason = None
         session.flush()
         return job

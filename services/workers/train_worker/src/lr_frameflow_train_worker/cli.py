@@ -15,7 +15,8 @@ from sqlalchemy.orm import sessionmaker
 from lr_frameflow_domain.jobs import JobStatus
 from lr_frameflow_domain.profiles import ProfileStatus
 from lr_frameflow_inference_pipeline import train_model
-from lr_frameflow_observability import get_logger
+from lr_frameflow_observability import get_logger, start_heartbeat_thread
+from lr_frameflow_persistence.reaper import reap_stuck_jobs, start_reaper_thread
 from lr_frameflow_persistence.repositories.feature_vectors import FeatureVectorRepository
 from lr_frameflow_persistence.repositories.jobs import JobRepository
 from lr_frameflow_persistence.repositories.photos import PhotoRepository
@@ -23,7 +24,7 @@ from lr_frameflow_persistence.repositories.profiles import ProfileRepository
 from lr_frameflow_persistence.session import get_session_factory, session_scope
 from lr_frameflow_queue import consumer
 from lr_frameflow_queue.constants import QUEUE_TRAIN
-from lr_frameflow_queue.publisher import redis_from_env
+from lr_frameflow_queue.publisher import RedisQueuePublisher, redis_from_env
 
 log = get_logger("lr_ff.train_worker")
 
@@ -61,7 +62,6 @@ def process_one(redis: Redis, factory: sessionmaker) -> bool:
     job_uuid = UUID(envelope.job_id)
     profile_id_str = envelope.payload.get("profile_id")
     photo_ids = [UUID(pid) for pid in envelope.payload.get("photo_ids", [])]
-    base_preset = envelope.payload.get("base_preset")
 
     try:
         with session_scope(factory) as session:
@@ -122,7 +122,16 @@ def process_one(redis: Redis, factory: sessionmaker) -> bool:
 def main() -> None:
     log.info("LR-FrameFlow train worker — queue %s", QUEUE_TRAIN)
     redis = redis_from_env()
+    publisher = RedisQueuePublisher(redis)
     factory = get_session_factory()
+
+    start_heartbeat_thread("/tmp/lr_ff_train_worker.heartbeat")
+
+    n = reap_stuck_jobs(factory, queue_name=QUEUE_TRAIN, publisher=publisher)
+    if n:
+        log.warning("reaper: recovered %d stuck jobs at startup", n)
+    start_reaper_thread(factory, queue_name=QUEUE_TRAIN, publisher=publisher, logger=log)
+
     while True:
         try:
             if not process_one(redis, factory):

@@ -1,0 +1,17 @@
+{
+  "schema_version": "photo-upload-v1",
+  "lr_catalog_uuid": "2F3A1B4C-8D9E-4F10-A2B3-C4D5E6F70001",
+  "exif_snapshot": {
+    "camera": "Sony A7 IV",
+    "iso": 400,
+    "shutter_speed": "1/500",
+    "aperture": "f/2.8",
+    "focal_length_mm": 85
+  },
+  "lr_develop_settings": {
+    "exposure": 0.3,
+    "contrast": 10,
+    "highlights": -20,
+    "shadows": 15
+  }
+}

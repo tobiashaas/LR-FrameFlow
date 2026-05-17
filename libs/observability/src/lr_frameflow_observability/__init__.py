@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-__all__ = ["get_logger", "log_kv"]
+from lr_frameflow_observability.heartbeat import start_heartbeat_thread
+
+__all__ = ["get_logger", "log_kv", "start_heartbeat_thread"]
 
 
 def get_logger(name: str) -> logging.Logger:

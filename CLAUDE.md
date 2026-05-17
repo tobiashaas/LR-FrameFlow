@@ -22,7 +22,7 @@ LRFrameFlow is an AI-powered Lightroom Classic photo editing system. It uses an 
 | Phase 1 — Domain Foundation | ✅ Done | DB models (Photo, Profile, FeatureVector, EditResult), migrations 002–006, API endpoints |
 | Phase 2 — Real Data Flow | ✅ Done | Workers download/upload MinIO, feature extraction, model artifact lifecycle |
 | Phase 3 — Real ML Pipeline | ✅ Done | Pillow histogram features (128-dim), Ridge regression, joblib serialization |
-| Phase 4 — Production Hardening | 🔲 Open | Retry logic, stuck-job recovery, Redis persistence, CI linting |
+| Phase 4 — Production Hardening | ✅ Done | Redis AOF, stuck-job reaper, at-least-once hardening, heartbeat, CI lint+tests, contracts |
 | Phase 5 — Bridge & Plugin | 🔲 Open | Tauri HTTP client, LR Plugin integration, end-to-end flow |
 
 See `TODO.md` for the detailed task breakdown.
@@ -210,9 +210,11 @@ python scripts/validate_contracts.py
 
 ## CI
 
-Two jobs on push/PR to `main`:
-1. **contracts** — validates OpenAPI spec + all JSON schemas
-2. **inference-pipeline** — runs `pytest libs/inference-pipeline/tests/`
+Four jobs on push/PR to `main`:
+1. **contracts** — validates OpenAPI spec + all JSON schemas + examples
+2. **lint** — Ruff check across all Python source dirs
+3. **inference-pipeline** — `pytest libs/inference-pipeline/tests/` (9 tests)
+4. **api-tests** — `pytest services/api/tests/` (14 tests, mock-based, no Postgres needed)
 
 ---
 

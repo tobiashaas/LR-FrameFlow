@@ -30,6 +30,10 @@ class RedisQueuePublisher:
         q = first_stage_queue(kind)
         self._r.rpush(q, envelope.dumps())
 
+    def enqueue_to(self, queue: str, envelope: JobEnvelopeV1) -> None:
+        """Push an envelope onto an explicit queue (used by the reaper)."""
+        self._r.rpush(queue, envelope.dumps())
+
     def forward_to_inference(self, envelope: JobEnvelopeV1) -> None:
         nxt = envelope.model_copy(update={"attempt": envelope.attempt + 1})
         self._r.rpush(QUEUE_INFERENCE, nxt.dumps())
