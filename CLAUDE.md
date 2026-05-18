@@ -22,7 +22,7 @@ LRFrameFlow is an AI-powered Lightroom Classic photo editing system. It uses an 
 | Phase 1 — Domain Foundation | ✅ Done | DB models (Photo, Profile, FeatureVector, EditResult), migrations 002–006, API endpoints |
 | Phase 2 — Real Data Flow | ✅ Done | Workers download/upload MinIO, feature extraction, model artifact lifecycle |
 | Phase 3 — Real ML Pipeline | ✅ Done | Pillow histogram features (128-dim), Ridge regression, joblib serialization |
-| Phase 4 — Production Hardening | ✅ Done | Redis AOF, stuck-job reaper, at-least-once hardening, heartbeat, CI lint+tests, contracts |
+| Phase 4 — Production Hardening | ✅ Done | Redis AOF, stuck-job reaper, at-least-once, heartbeat, CI lint+tests, contracts, JSON logs, rate limiting |
 | Phase 5 — Bridge & Plugin | 🔲 Open | Tauri HTTP client, LR Plugin integration, end-to-end flow |
 
 See `TODO.md` for the detailed task breakdown.
@@ -242,3 +242,7 @@ Key vars (see `infra/compose/env.example` for full list):
 | `S3_BUCKET` | `lrff-photos` | workers, API |
 | `S3_ACCESS_KEY` | `minio` | workers, API |
 | `S3_SECRET_KEY` | `miniosecret_changeme` | workers, API |
+| `LOG_FORMAT` | `json` | all services — set to `text` for human-readable local output |
+| `RATE_LIMIT_REQUESTS` | `60` | API — max requests per window per IP on job endpoints |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | API — sliding window length in seconds |
+| `MAX_QUEUE_DEPTH` | `500` | API — max queue length before 429 backpressure |

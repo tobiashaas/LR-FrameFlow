@@ -8,6 +8,14 @@ from lr_frameflow_domain.jobs import JobKind
 from lr_frameflow_queue.constants import QUEUE_FEATURE, QUEUE_INFERENCE, QUEUE_TRAIN
 from lr_frameflow_queue.envelope import JobEnvelopeV1
 
+# Maximum number of messages allowed in a queue before enqueue is refused.
+# Override via env var MAX_QUEUE_DEPTH (per queue).
+DEFAULT_MAX_QUEUE_DEPTH = int(os.environ.get("MAX_QUEUE_DEPTH", "500"))
+
+
+class QueueFullError(Exception):
+    """Raised when a queue has reached its maximum depth."""
+
 
 def redis_from_env(default_url: str = "redis://127.0.0.1:6379/0") -> Redis:
     return Redis.from_url(os.environ.get("REDIS_URL", default_url), decode_responses=True)
@@ -25,9 +33,14 @@ class RedisQueuePublisher:
     def __init__(self, client: Redis) -> None:
         self._r = client
 
-    def enqueue(self, envelope: JobEnvelopeV1) -> None:
+    def queue_depth(self, queue_name: str) -> int:
+        return int(self._r.llen(queue_name))
+
+    def enqueue(self, envelope: JobEnvelopeV1, *, max_depth: int = DEFAULT_MAX_QUEUE_DEPTH) -> None:
         kind = JobKind(envelope.job_kind)
         q = first_stage_queue(kind)
+        if self.queue_depth(q) >= max_depth:
+            raise QueueFullError(f"queue {q!r} is at capacity ({max_depth} messages)")
         self._r.rpush(q, envelope.dumps())
 
     def enqueue_to(self, queue: str, envelope: JobEnvelopeV1) -> None:

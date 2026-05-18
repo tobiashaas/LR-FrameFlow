@@ -10,6 +10,9 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from sqlalchemy.orm import Session
 
 from lr_frameflow_api.deps import get_publisher, get_session, get_storage
+from lr_frameflow_api.middleware import RateLimitMiddleware, RequestIdMiddleware
+from lr_frameflow_observability import configure_logging, get_request_id
+from lr_frameflow_queue.publisher import QueueFullError, redis_from_env
 from lr_frameflow_api.schemas import (
     EditJobRequestV1,
     EditResultResponse,
@@ -30,7 +33,12 @@ from lr_frameflow_persistence.repositories.profiles import ProfileRepository
 from lr_frameflow_queue.envelope import JobEnvelopeV1
 from lr_frameflow_queue.publisher import RedisQueuePublisher
 
+configure_logging()
+
 app = FastAPI(title="LR-FrameFlow API", version="0.1.1")
+app.state.redis = redis_from_env()
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RequestIdMiddleware)
 
 
 @app.get("/health")
@@ -152,7 +160,7 @@ def create_train_job(
         profile_id=profile_id,
     )
 
-    trace = {}
+    trace: dict = {"request_id": get_request_id()}
     if body.correlation_id:
         trace["correlation_id"] = body.correlation_id
     envelope = JobEnvelopeV1(
@@ -161,7 +169,10 @@ def create_train_job(
         payload=payload,
         trace_context=trace,
     )
-    publisher.enqueue(envelope)
+    try:
+        publisher.enqueue(envelope)
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return JobAcceptedResponse(job_id=job_id, kind="train")
 
 
@@ -211,7 +222,7 @@ def create_edit_job(
         profile_id=body.profile_id,
     )
 
-    trace = {}
+    trace: dict = {"request_id": get_request_id()}
     if body.correlation_id:
         trace["correlation_id"] = body.correlation_id
     envelope = JobEnvelopeV1(
@@ -220,7 +231,10 @@ def create_edit_job(
         payload=body.model_dump(mode="json"),
         trace_context=trace,
     )
-    publisher.enqueue(envelope)
+    try:
+        publisher.enqueue(envelope)
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return JobAcceptedResponse(job_id=job_id, kind="edit")
 
 

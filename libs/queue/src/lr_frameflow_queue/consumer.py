@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from redis import Redis
 
 from lr_frameflow_queue.constants import dlq_name

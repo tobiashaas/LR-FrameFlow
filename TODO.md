@@ -46,8 +46,8 @@ Update it whenever a phase is finished or new tasks are identified.
 - [x] **CI linting**: Ruff check step added to CI for all Python source dirs
 - [x] **CI tests**: API integration tests (14 tests, mock-based, no Postgres) in `services/api/tests/`; added `api-tests` job to CI
 - [x] **Contracts validation**: extended `validate_contracts.py` with edit-request + photo-upload schemas + examples; JSON parse check for all schema files
-- [ ] **Observability**: structured JSON logs, request-id propagation through queue envelopes
-- [ ] **Rate limiting / backpressure**: guard API against flooding the queues
+- [x] **Observability**: `libs/observability` — `JsonFormatter`, `RequestIdFilter`, `configure_logging()`, `request_id` contextvar; FastAPI `RequestIdMiddleware` sets/propagates `X-Request-ID`; all workers call `configure_logging()` + `set_request_id()` from envelope `trace_context`; env `LOG_FORMAT=text` falls back to plain text
+- [x] **Rate limiting / backpressure**: `RateLimitMiddleware` (fixed-window, Redis-backed, per-IP, 60 req/60s on `/v1/jobs/*`); `QueueFullError` when `LLEN > MAX_QUEUE_DEPTH` (default 500) → 429; env vars `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `MAX_QUEUE_DEPTH`
 
 ### Phase 5 — Bridge & Plugin Integration
 - [ ] Tauri bridge app: implement HTTP client to call API (`/v1/photos`, `/v1/jobs/train`, `/v1/jobs/edit`)

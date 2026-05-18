@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from lr_frameflow_domain.jobs import JobStatus
 from lr_frameflow_inference_pipeline import run_inference
-from lr_frameflow_observability import get_logger, start_heartbeat_thread
+from lr_frameflow_observability import configure_logging, get_logger, set_request_id, start_heartbeat_thread
 from lr_frameflow_persistence.reaper import reap_stuck_jobs, start_reaper_thread
 from lr_frameflow_persistence.repositories.edit_results import EditResultRepository
 from lr_frameflow_persistence.repositories.feature_vectors import FeatureVectorRepository
@@ -54,6 +54,7 @@ def process_one(redis: Redis, factory: sessionmaker) -> bool:
     job_uuid = UUID(envelope.job_id)
     profile_id_str = envelope.payload.get("profile_id")
     photo_ids = [UUID(pid) for pid in envelope.payload.get("photo_ids", [])]
+    set_request_id(envelope.trace_context.get("request_id", ""))
 
     try:
         with session_scope(factory) as session:
@@ -120,6 +121,7 @@ def main() -> None:
     publisher = RedisQueuePublisher(redis)
     factory = get_session_factory()
 
+    configure_logging()
     start_heartbeat_thread("/tmp/lr_ff_inference_worker.heartbeat")
 
     n = reap_stuck_jobs(factory, queue_name=QUEUE_INFERENCE, publisher=publisher)

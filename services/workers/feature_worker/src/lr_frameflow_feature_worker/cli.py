@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from lr_frameflow_domain.jobs import JobStatus
 from lr_frameflow_inference_pipeline import extract_features
-from lr_frameflow_observability import get_logger, start_heartbeat_thread
+from lr_frameflow_observability import configure_logging, get_logger, set_request_id, start_heartbeat_thread
 from lr_frameflow_persistence.reaper import reap_stuck_jobs, start_reaper_thread
 from lr_frameflow_persistence.repositories.feature_vectors import FeatureVectorRepository
 from lr_frameflow_persistence.repositories.jobs import JobRepository
@@ -55,6 +55,7 @@ def process_one(redis: Redis, publisher: RedisQueuePublisher, factory: sessionma
 
     job_uuid = UUID(envelope.job_id)
     photo_ids = [UUID(pid) for pid in envelope.payload.get("photo_ids", [])]
+    set_request_id(envelope.trace_context.get("request_id", ""))
 
     try:
         with session_scope(factory) as session:
@@ -116,6 +117,7 @@ def main() -> None:
     publisher = RedisQueuePublisher(redis)
     factory = get_session_factory()
 
+    configure_logging()
     start_heartbeat_thread("/tmp/lr_ff_feature_worker.heartbeat")
 
     # Recover any jobs stuck in RUNNING at startup, then run periodically.
